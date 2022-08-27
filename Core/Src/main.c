@@ -44,10 +44,10 @@
 CAN_HandleTypeDef hcan;
 
 UART_HandleTypeDef huart2;
-DMA_HandleTypeDef hdma_usart2_rx;
+DMA_HandleTypeDef hdma_usart2_tx;
 
 /* USER CODE BEGIN PV */
-static GPIO_InitTypeDef  GPIO_InitStruct;
+static GPIO_InitTypeDef GPIO_InitStruct;
 
 uint8_t ubKeyNumber = 0x0;
 
@@ -55,7 +55,7 @@ CAN_TxHeaderTypeDef TxHeader;
 CAN_RxHeaderTypeDef RxHeader;
 uint8_t TxData[8];
 uint8_t RxData[8];
-uint32_t TxMailbox=0;
+uint32_t TxMailbox = 0;
 
 CAN_FilterTypeDef sFilterConfig;
 
@@ -75,8 +75,30 @@ static void MX_CAN_Init(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+char __print_buffer[256];
+char __buffer[256];
+
 void __print_service(const char *str) {
-	HAL_UART_Transmit(&huart2, (uint8_t*) str, strlen(str), 100);
+    strcat(__print_buffer, str);
+
+    HAL_UART_StateTypeDef state = HAL_UART_GetState(&huart2);
+    if(state == HAL_UART_STATE_READY){
+        strcpy(__buffer, __print_buffer);
+        HAL_StatusTypeDef status = HAL_UART_Transmit_DMA(&huart2, (uint8_t*) __buffer, strlen(__buffer));
+        if (status == HAL_OK) {
+            //clear string buffer - put start offset to index 0
+            __print_buffer[0] = '\0';
+        }
+    }
+
+
+//	HAL_UART_Transmit(&huart2, (uint8_t*) str, strlen(str), 10);
+}
+
+void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart)
+{
+  /* Turn LED3 on: Transfer in reception process is correct */
+	BSP_LED_Toggle(LED3);
 }
 
 /* USER CODE END 0 */
@@ -127,22 +149,23 @@ int main(void)
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
+	uint32_t counter = 0;
+
 	while (1) {
-		print("test");
-		HAL_GPIO_TogglePin(LED3_GPIO_PORT, LED3_PIN);
-		/* Insert delay 100 ms */
+		println("Loop %d", counter++);
 		HAL_Delay(100);
 
 		int pendingRequests = HAL_CAN_IsTxMessagePending(&hcan, TxMailbox);
-	    if (pendingRequests == 0) {
-	    	TxHeader.DLC = 1;
-	    	TxHeader.StdId = 0x001;
-	    	TxHeader.IDE = CAN_ID_STD;
-	    	RxData[0] = 0xAA;
-	    	if (HAL_CAN_AddTxMessage(&hcan, &TxHeader, RxData, &TxMailbox) != HAL_OK) {
-	            Error_Handler();
-	        }
-	    }
+		if (pendingRequests == 0) {
+			TxHeader.DLC = 1;
+			TxHeader.StdId = 0x001;
+			TxHeader.IDE = CAN_ID_STD;
+			RxData[0] = 0xAA;
+			if (HAL_CAN_AddTxMessage(&hcan, &TxHeader, RxData, &TxMailbox)
+					!= HAL_OK) {
+				Error_Handler();
+			}
+		}
 
     /* USER CODE END WHILE */
 
@@ -218,45 +241,46 @@ static void MX_CAN_Init(void)
     Error_Handler();
   }
   /* USER CODE BEGIN CAN_Init 2 */
-    /*##-2- Configure the CAN Filter ###########################################*/
-    sFilterConfig.FilterBank = 0;
-    sFilterConfig.FilterMode = CAN_FILTERMODE_IDMASK;
-    sFilterConfig.FilterScale = CAN_FILTERSCALE_32BIT;
-    sFilterConfig.FilterIdHigh = 0x0000;
-    sFilterConfig.FilterIdLow = 0x0000;
-    sFilterConfig.FilterMaskIdHigh = 0x0000;
-    sFilterConfig.FilterMaskIdLow = 0x0000;
-    sFilterConfig.FilterFIFOAssignment = CAN_RX_FIFO0;
-    sFilterConfig.FilterActivation = ENABLE;
-    sFilterConfig.SlaveStartFilterBank = 14; // how many filters to assign to the CAN1 (master can)
+	/*##-2- Configure the CAN Filter ###########################################*/
+	sFilterConfig.FilterBank = 0;
+	sFilterConfig.FilterMode = CAN_FILTERMODE_IDMASK;
+	sFilterConfig.FilterScale = CAN_FILTERSCALE_32BIT;
+	sFilterConfig.FilterIdHigh = 0x0000;
+	sFilterConfig.FilterIdLow = 0x0000;
+	sFilterConfig.FilterMaskIdHigh = 0x0000;
+	sFilterConfig.FilterMaskIdLow = 0x0000;
+	sFilterConfig.FilterFIFOAssignment = CAN_RX_FIFO0;
+	sFilterConfig.FilterActivation = ENABLE;
+	sFilterConfig.SlaveStartFilterBank = 14; // how many filters to assign to the CAN1 (master can)
 
-    if (HAL_CAN_ConfigFilter(&hcan, &sFilterConfig) != HAL_OK) {
-        /* Filter configuration Error */
-        Error_Handler();
-    }
+	if (HAL_CAN_ConfigFilter(&hcan, &sFilterConfig) != HAL_OK) {
+		/* Filter configuration Error */
+		Error_Handler();
+	}
 
-    /*##-3- Start the CAN peripheral ###########################################*/
-    if (HAL_CAN_Start(&hcan) != HAL_OK) {
-        /* Start Error */
-        Error_Handler();
-    }
+	/*##-3- Start the CAN peripheral ###########################################*/
+	if (HAL_CAN_Start(&hcan) != HAL_OK) {
+		/* Start Error */
+		Error_Handler();
+	}
 
-    const uint32_t error_filter = CAN_IT_ERROR_WARNING | CAN_IT_ERROR_PASSIVE | CAN_IT_BUSOFF |
+	const uint32_t error_filter = CAN_IT_ERROR_WARNING | CAN_IT_ERROR_PASSIVE
+			| CAN_IT_BUSOFF |
 			CAN_IT_LAST_ERROR_CODE | CAN_IT_ERROR;
 
-    if (HAL_CAN_ActivateNotification(&hcan, error_filter) != HAL_OK) {
+	if (HAL_CAN_ActivateNotification(&hcan, error_filter) != HAL_OK) {
 
-        /* Notification Error */
-        Error_Handler();
-    }
+		/* Notification Error */
+		Error_Handler();
+	}
 
-    /*##-5- Configure Transmission process #####################################*/
-    TxHeader.StdId = 0x321;
-    TxHeader.ExtId = 0x01;
-    TxHeader.RTR = CAN_RTR_DATA;
-    TxHeader.IDE = CAN_ID_STD;
-    TxHeader.DLC = 2;
-    TxHeader.TransmitGlobalTime = DISABLE;
+	/*##-5- Configure Transmission process #####################################*/
+	TxHeader.StdId = 0x321;
+	TxHeader.ExtId = 0x01;
+	TxHeader.RTR = CAN_RTR_DATA;
+	TxHeader.IDE = CAN_ID_STD;
+	TxHeader.DLC = 2;
+	TxHeader.TransmitGlobalTime = DISABLE;
 
   /* USER CODE END CAN_Init 2 */
 
