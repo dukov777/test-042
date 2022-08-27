@@ -23,7 +23,7 @@
 /* USER CODE BEGIN Includes */
 #include <string.h>
 #include "print.h"
-
+#include "slcan.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -44,7 +44,6 @@
 CAN_HandleTypeDef hcan;
 
 UART_HandleTypeDef huart2;
-DMA_HandleTypeDef hdma_usart2_tx;
 
 /* USER CODE BEGIN PV */
 static GPIO_InitTypeDef GPIO_InitStruct;
@@ -66,7 +65,6 @@ char printBuffer[PRINT_BUFFER_SIZE];
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
-static void MX_DMA_Init(void);
 static void MX_USART2_UART_Init(void);
 static void MX_CAN_Init(void);
 /* USER CODE BEGIN PFP */
@@ -75,24 +73,31 @@ static void MX_CAN_Init(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-char __print_buffer[256];
-char __buffer[256];
+#define PRINT_BUFFER_LEN 512
+char __print_buffer[PRINT_BUFFER_LEN];
+char __buffer[PRINT_BUFFER_LEN];
 
-void __print_service(const char *str) {
-    strcat(__print_buffer, str);
+int __print_service(const char *str) {
 
-    HAL_UART_StateTypeDef state = HAL_UART_GetState(&huart2);
-    if(state == HAL_UART_STATE_READY){
-        strcpy(__buffer, __print_buffer);
-        HAL_StatusTypeDef status = HAL_UART_Transmit_DMA(&huart2, (uint8_t*) __buffer, strlen(__buffer));
-        if (status == HAL_OK) {
-            //clear string buffer - put start offset to index 0
-            __print_buffer[0] = '\0';
-        }
+    int error = 0;
+
+    uint32_t __buffer_len = strlen(__print_buffer) + strlen(str);
+    if(__buffer_len < PRINT_BUFFER_LEN){
+        strncat(__print_buffer, str, PRINT_BUFFER_LEN - __buffer_len);
+    }else{
+        error = -1;
     }
 
+    HAL_UART_StateTypeDef state = HAL_UART_GetState(&huart2);
+    if(state & HAL_UART_STATE_READY){
+        strncpy(__buffer, __print_buffer, PRINT_BUFFER_LEN);
+        HAL_UART_Transmit_DMA(&huart2, (uint8_t*) __buffer, strlen(__buffer));
+        __print_buffer[0] = '\0';
 
-//	HAL_UART_Transmit(&huart2, (uint8_t*) str, strlen(str), 10);
+        error = 0;
+    }
+
+    return error;
 }
 
 void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart)
@@ -100,6 +105,43 @@ void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart)
   /* Turn LED3 on: Transfer in reception process is correct */
 	BSP_LED_Toggle(LED3);
 }
+
+
+//-------------------------------------------------------------------------
+
+#define MAX_BUFFER_LEN 128
+
+char __in_buffer[MAX_BUFFER_LEN];
+static uint32_t __index = 0;
+
+int push(uint8_t byte){
+
+    __in_buffer[__index++] = byte;
+    if(__index < MAX_BUFFER_LEN) {
+        return __index;
+    }else{
+        return -1;
+    }
+}
+
+const char* get_buffer(){
+    return __in_buffer;
+}
+
+void flush_buffer(){
+    __index = 0;
+    memset(__in_buffer, 0, MAX_BUFFER_LEN);
+}
+
+const char* get_line() {
+    char* where = strchr(__in_buffer, '\r');
+    if(where != NULL){
+        return __in_buffer;
+    } else {
+        return NULL;
+    }
+}
+
 
 /* USER CODE END 0 */
 
@@ -132,7 +174,6 @@ int main(void)
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
-  MX_DMA_Init();
   MX_USART2_UART_Init();
   MX_CAN_Init();
   /* USER CODE BEGIN 2 */
@@ -145,27 +186,44 @@ int main(void)
 
 	GPIO_InitStruct.Pin = LED3_PIN;
 	HAL_GPIO_Init(LED3_GPIO_PORT, &GPIO_InitStruct);
+
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
-	uint32_t counter = 0;
 
+    flush_buffer();
+	HAL_UART_Transmit(&huart2, (uint8_t*)"Hello Start\r\n", 15, 1000);
 	while (1) {
-		println("Loop %d", counter++);
-		HAL_Delay(100);
+	    //read line
+	    char ch;
+		HAL_StatusTypeDef state = HAL_UART_Receive(&huart2, (uint8_t*)&ch, 1, 1);
+		if(state == HAL_OK){
+		    push(ch);
+		    const char* line = get_line();
+		    if(line){
+		        HAL_UART_Transmit(&huart2, (uint8_t*)line, strlen(line), 10);
+		        flush_buffer();
+		        void slcan_spin(line);
 
-		int pendingRequests = HAL_CAN_IsTxMessagePending(&hcan, TxMailbox);
-		if (pendingRequests == 0) {
-			TxHeader.DLC = 1;
-			TxHeader.StdId = 0x001;
-			TxHeader.IDE = CAN_ID_STD;
-			RxData[0] = 0xAA;
-			if (HAL_CAN_AddTxMessage(&hcan, &TxHeader, RxData, &TxMailbox)
-					!= HAL_OK) {
-				Error_Handler();
-			}
+//		        slcan_decode_line(line);
+
+		    }
 		}
+
+//		HAL_Delay(100);
+
+//		int pendingRequests = HAL_CAN_IsTxMessagePending(&hcan, TxMailbox);
+//		if (pendingRequests == 0) {
+//			TxHeader.DLC = 1;
+//			TxHeader.StdId = 0x001;
+//			TxHeader.IDE = CAN_ID_STD;
+//			RxData[0] = 0xAA;
+//			if (HAL_CAN_AddTxMessage(&hcan, &TxHeader, RxData, &TxMailbox)
+//					!= HAL_OK) {
+//				Error_Handler();
+//			}
+//		}
 
     /* USER CODE END WHILE */
 
@@ -318,22 +376,6 @@ static void MX_USART2_UART_Init(void)
   /* USER CODE BEGIN USART2_Init 2 */
 
   /* USER CODE END USART2_Init 2 */
-
-}
-
-/**
-  * Enable DMA controller clock
-  */
-static void MX_DMA_Init(void)
-{
-
-  /* DMA controller clock enable */
-  __HAL_RCC_DMA1_CLK_ENABLE();
-
-  /* DMA interrupt init */
-  /* DMA1_Channel4_5_IRQn interrupt configuration */
-  HAL_NVIC_SetPriority(DMA1_Channel4_5_IRQn, 0, 0);
-  HAL_NVIC_EnableIRQ(DMA1_Channel4_5_IRQn);
 
 }
 

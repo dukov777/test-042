@@ -8,10 +8,10 @@
 #ifndef INC_PRINT_H_
 #define INC_PRINT_H_
 
-void print_init(void (*print_service)(const char *str));
+void print_init(int (*print_service)(const char *str));
 
-void println(const char *format, ...);
-void print(const char *format, ...);
+int println(const char *format, ...);
+int print(const char *format, ...);
 
 
 #endif /* INC_PRINT_H_ */

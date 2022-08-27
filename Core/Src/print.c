@@ -13,49 +13,46 @@
 static char printBuffer[PRINT_BUFFER_SIZE];
 
 
-static void (*__print_service)(const char *str);
+static int (*__print_service)(const char *str);
 
-void print_init(void (*print_service)(const char *str)){
+void print_init(int (*print_service)(const char *str)){
 	__print_service = print_service;
 }
 
-void _print(const char *str) {
-    __print_service(str);
+int _print(const char *str) {
+    return __print_service(str);
 }
 
-void _printf(const char *format, va_list args) {
+int _printf(const char *format, va_list args) {
 
-	if(strlen(format) >= PRINT_BUFFER_SIZE) {
-		const char* errorMessage = "ERROR: format argument has length bigger than expected len!\n";
-		_print(errorMessage);
-		_print(format);
-		_print("\r\n");
-		return;
+    if(strlen(format) >= PRINT_BUFFER_SIZE) {
+		return -1;
 	}
 
-	int len = vsnprintf(printBuffer, PRINT_BUFFER_SIZE, format, args);
+	vsnprintf(printBuffer, PRINT_BUFFER_SIZE, format, args);
 
-	if(len <= PRINT_BUFFER_SIZE) {
-		_print(printBuffer);
-	}else{
-		const char* errorMessage = "ERROR: Encoding error! in format string ->";
-		_print(errorMessage);
-		_print(format);
-		_print("\r\n");
+	return _print(printBuffer);
+}
+
+int println(const char *format, ...) {
+	va_list args;
+
+	va_start(args, format);
+	int error = _printf(format, args);
+
+	va_end(args);
+
+	if (error >= 0){
+	    error = _print("\r\n");
 	}
+
+	return error;
 }
 
-void println(const char *format, ...) {
+int print(const char *format, ...) {
 	va_list args;
 	va_start(args, format);
-	_printf(format, args);
+	int error = _printf(format, args);
 	va_end(args);
-	_print("\r\n");
-}
-
-void print(const char *format, ...) {
-	va_list args;
-	va_start(args, format);
-	_printf(format, args);
-	va_end(args);
+	return error;
 }
