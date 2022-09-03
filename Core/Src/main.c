@@ -133,7 +133,7 @@ void flush_buffer(){
     memset(__in_buffer, 0, MAX_BUFFER_LEN);
 }
 
-const char* get_line() {
+char* get_line() {
     char* where = strchr(__in_buffer, '\r');
     if(where != NULL){
         return __in_buffer;
@@ -200,14 +200,13 @@ int main(void)
 		HAL_StatusTypeDef state = HAL_UART_Receive(&huart2, (uint8_t*)&ch, 1, 1);
 		if(state == HAL_OK){
 		    push(ch);
-		    const char* line = get_line();
+
+		    char* line = get_line();
 		    if(line){
-		        HAL_UART_Transmit(&huart2, (uint8_t*)line, strlen(line), 10);
+//		        HAL_UART_Transmit(&huart2, (uint8_t*)line, strlen(line), 10);
+		        slcan_decode_line(line);
+                HAL_UART_Transmit(&huart2, (uint8_t*)line, strlen(line), 10);
 		        flush_buffer();
-		        void slcan_spin(line);
-
-//		        slcan_decode_line(line);
-
 		    }
 		}
 
