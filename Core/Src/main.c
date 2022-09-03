@@ -24,6 +24,7 @@
 #include <string.h>
 #include "print.h"
 #include "slcan.h"
+#include "ringbuffer.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -143,6 +144,21 @@ char* get_line() {
 }
 
 
+ring_buffer_t ring_buffer;
+
+
+uint8_t uart2_buffer[8];
+volatile int global_error;
+
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
+{
+    ring_buffer_queue(&ring_buffer, uart2_buffer[0]);
+    if(HAL_OK != HAL_UART_Receive_IT(huart, uart2_buffer, 1)){
+        global_error = 1;
+    }
+}
+
+
 /* USER CODE END 0 */
 
 /**
@@ -153,6 +169,9 @@ int main(void)
 {
   /* USER CODE BEGIN 1 */
 	print_init(__print_service);
+
+	/* Create and initialize ring buffer */
+	ring_buffer_init(&ring_buffer);
 
   /* USER CODE END 1 */
 
@@ -194,21 +213,19 @@ int main(void)
 
     flush_buffer();
 	HAL_UART_Transmit(&huart2, (uint8_t*)"Hello Start\r\n", 15, 1000);
+    HAL_UART_Receive_IT(&huart2, uart2_buffer, 2);
 	while (1) {
-	    //read line
 	    char ch;
-		HAL_StatusTypeDef state = HAL_UART_Receive(&huart2, (uint8_t*)&ch, 1, 1);
-		if(state == HAL_OK){
-		    push(ch);
+        if(0 < ring_buffer_dequeue(&ring_buffer, &ch)) {
+            push(ch);
+            char* line = get_line();
 
-		    char* line = get_line();
-		    if(line){
-//		        HAL_UART_Transmit(&huart2, (uint8_t*)line, strlen(line), 10);
-		        slcan_decode_line(line);
+            if(line){
+                slcan_decode_line(line);
                 HAL_UART_Transmit(&huart2, (uint8_t*)line, strlen(line), 10);
-		        flush_buffer();
-		    }
-		}
+                flush_buffer();
+            }
+        }
 
 //		HAL_Delay(100);
 

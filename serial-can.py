@@ -14,6 +14,7 @@ slcan_command = b"t0012aabb\r"
 ser.write(slcan_command)
 
 print("sent = " + slcan_command.decode())
-print("received = " + str(int.from_bytes(ser.read(1), 'little')))
+reply = ser.read(1)
+print("received = " + str(int.from_bytes(reply, 'little')))
 
 ser.close()
