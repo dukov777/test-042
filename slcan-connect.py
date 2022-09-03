@@ -1,4 +1,5 @@
 import time
+import can
 import can.interfaces.slcan as sl
 from can.exceptions import (
     CanInterfaceNotImplementedError,
@@ -51,14 +52,29 @@ class slcanBus(sl.slcanBus):
         self.open()
 
 
-bus = slcanBus(channel='/dev/tty.usbmodem12303',
+bus = slcanBus(channel='/dev/tty.usbmodem12403',
                   ttyBoudrate=115200, sleep_after_open=0)
+
+msg = can.Message(arbitration_id=0x11223344, data=[1, 2, 3, 4, 5, 6, 7, 8], is_extended_id=True)
+try:
+    bus.send(msg)
+    print(f"Message sent on {bus.channel_info}")
+except can.CanError:
+    print("Message NOT sent")
+
+msg = can.Message(arbitration_id=0x001, data=[
+                  0xa1, 0xa2, 0xa3, 0xa4, 0xa5, 0xa6, 0xa7, 0xa8], is_extended_id=False)
+try:
+    bus.send(msg)
+    print(f"Message sent on {bus.channel_info}")
+except can.CanError:
+    print("Message NOT sent")
 
 time.sleep(0.1)
 version = bus.get_version(1)
 print(version)
 
 time.sleep(0.1)
-bus.set_bitrate(1000000)
+bus.set_bitrate(125000)
 
 bus.shutdown()

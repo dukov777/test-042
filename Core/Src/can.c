@@ -169,23 +169,23 @@ void HAL_CAN_MspDeInit(CAN_HandleTypeDef* canHandle)
 bool can_send(uint32_t id, bool extended, bool remote, uint8_t* data, size_t length)
 {
     HAL_StatusTypeDef status;
-    CAN_TxHeaderTypeDef TxHeader;
-    uint32_t TxMailbox = 0;
-    uint8_t tx_buffer[8];
+    CAN_TxHeaderTypeDef tx_header;
+    uint32_t tx_mailbox = 0;
 
     uint32_t free= HAL_CAN_GetTxMailboxesFreeLevel(&hcan);
     if (free > 0) {
-        TxHeader.DLC = length;
+        tx_header.DLC = length;
+        tx_header.RTR = CAN_RTR_DATA;
 
         if(extended){
-            TxHeader.ExtId = id;
-            TxHeader.IDE = CAN_ID_EXT;
+            tx_header.ExtId = id;
+            tx_header.IDE = CAN_ID_EXT;
         }else{
-            TxHeader.StdId = id;
-            TxHeader.IDE = CAN_ID_STD;
+            tx_header.StdId = id;
+            tx_header.IDE = CAN_ID_STD;
         }
 
-        status = HAL_CAN_AddTxMessage(&hcan, &TxHeader, tx_buffer, &TxMailbox);
+        status = HAL_CAN_AddTxMessage(&hcan, &tx_header, data, &tx_mailbox);
     }else{
         status = HAL_BUSY;
     }
