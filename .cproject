@@ -80,7 +80,7 @@
 						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Core"/>
 						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Drivers"/>
 						<entry excluding="examples" flags="VALUE_WORKSPACE_PATH" kind="sourcePath" name="ring-buffer"/>
-						<entry excluding="usbcfg.c|uart_bridge.c|slcan_thread.c|can_driver.c|bus_power.c" flags="VALUE_WORKSPACE_PATH" kind="sourcePath" name="slcan"/>
+						<entry excluding="mock_can_driver.c|usbcfg.c|uart_bridge.c|slcan_thread.c|can_driver.c|bus_power.c" flags="VALUE_WORKSPACE_PATH" kind="sourcePath" name="slcan"/>
 					</sourceEntries>
 				</configuration>
 			</storageModule>
