@@ -50,7 +50,7 @@ void MX_CAN_Init(void)
 
   /* USER CODE END CAN_Init 1 */
   hcan.Instance = CAN;
-  hcan.Init.Prescaler = 16;
+  hcan.Init.Prescaler = 48;
   hcan.Init.Mode = CAN_MODE_NORMAL;
   hcan.Init.SyncJumpWidth = CAN_SJW_1TQ;
   hcan.Init.TimeSeg1 = CAN_BS1_2TQ;
@@ -230,16 +230,16 @@ bool can_send(uint32_t id, bool extended, bool remote, uint8_t* data, size_t len
 struct {
     uint32_t bitrate;
     uint32_t prescaler;
-} const can_bitrate_map[10] = {
-        {.bitrate=10000, .prescaler=200},
-        {.bitrate=20000, .prescaler=100},
-        {.bitrate=25000, .prescaler=80},
-        {.bitrate=50000, .prescaler=40},
-        {.bitrate=100000, .prescaler=20},
-        {.bitrate=125000, .prescaler=16},
-        {.bitrate=250000, .prescaler=8},
-        {.bitrate=500000, .prescaler=4},
-        {.bitrate=1000000, .prescaler=2},
+} const can_bitrate_map[9] = {
+        {.bitrate=10000, .prescaler=600},
+        {.bitrate=20000, .prescaler=300},
+        {.bitrate=25000, .prescaler=240},
+        {.bitrate=50000, .prescaler=120},
+        {.bitrate=100000, .prescaler=60},
+        {.bitrate=125000, .prescaler=48},
+        {.bitrate=250000, .prescaler=24},
+        {.bitrate=500000, .prescaler=12},
+        {.bitrate=1000000, .prescaler=6},
 
 };
 
@@ -250,14 +250,28 @@ bool can_set_bitrate(uint32_t bitrate)
         return false;
     }
 
-    for(int i = 0; i < 8; i++){
+    bool is_in_list = false;
+    for(int i = 0; i < 9; i++){
         if(can_bitrate_map[i].bitrate == bitrate){
-            hcan.Init.Prescaler = can_bitrate_map[i].prescaler;
+            is_in_list = true;
             break;
         }
     }
 
-    return (HAL_CAN_Init(&hcan) == HAL_OK);
+    if(is_in_list){
+        for(int i = 0; i < 9; i++){
+            if(can_bitrate_map[i].bitrate == bitrate){
+                hcan.Init.Prescaler = can_bitrate_map[i].prescaler;
+                break;
+            }
+        }
+    }
+
+    if(HAL_CAN_Init(&hcan) != HAL_OK){
+        return false;
+    }
+
+    return is_in_list;
 }
 
 bool can_open(int mode)

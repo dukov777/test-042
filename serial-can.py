@@ -4,7 +4,7 @@ import argparse
 parser = argparse.ArgumentParser(description='Connect to SLCAN port.')
 parser.add_argument('tty', type=str, 
                     help='/dev/tty.usbmodem12303')
-parser.add_argument('--boudrate', type=int, default=115200, help='115200')
+parser.add_argument('--boudrate', type=int, default=115200, help='1000000')
 
 args = parser.parse_args()
 
