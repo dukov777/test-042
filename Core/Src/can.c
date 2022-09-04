@@ -227,6 +227,7 @@ bool can_send(uint32_t id, bool extended, bool remote, uint8_t* data, size_t len
 //    }
 //}
 
+#ifdef STM32F042x6
 struct {
     uint32_t bitrate;
     uint32_t prescaler;
@@ -242,7 +243,9 @@ struct {
         {.bitrate=1000000, .prescaler=6},
 
 };
-
+#else
+#error "Unsupported chip! CAN bitrate prescalers should be precalculated."
+#endif
 
 bool can_set_bitrate(uint32_t bitrate)
 {
