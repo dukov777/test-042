@@ -122,7 +122,36 @@ void flush_buffer(){
     memset(__in_buffer, 0, MAX_BUFFER_LEN);
 }
 
+//char* slcan_getline(void* arg)
+//{
+//    static char line_buffer[500];
+//    static size_t pos = 0;
+//    size_t i;
+//    for (i = pos; i < sizeof(line_buffer); i++) {
+//        int c = chnGetTimeout((BaseChannel*)arg, TIME_INFINITE);
+//        if (c == STM_TIMEOUT) {
+//            /* no more data, continue */
+//            pos = i;
+//            return NULL;
+//        }
+//        if (c == '\n' || c == '\r' || c == '\0') {
+//            /* line found */
+//            line_buffer[i] = 0;
+//            pos = 0;
+//            led_set(STATUS_LED); // show USB activity
+//            return line_buffer;
+//        } else {
+//            line_buffer[i] = c;
+//        }
+//    }
+//
+//    /* reset */
+//    pos = 0;
+//    return NULL;
+//}
+
 char* get_line() {
+
     char* where = strchr(__in_buffer, '\r');
     if(where != NULL){
         return __in_buffer;
