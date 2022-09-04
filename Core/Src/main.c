@@ -161,7 +161,7 @@ char* get_line() {
 }
 
 
-ring_buffer_t ring_buffer;
+ring_buffer_t uart_rx_ring_buffer;
 
 
 uint8_t uart2_buffer[8];
@@ -169,12 +169,11 @@ volatile int global_error;
 
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
-    ring_buffer_queue(&ring_buffer, uart2_buffer[0]);
+    ring_buffer_queue(&uart_rx_ring_buffer, uart2_buffer[0]);
     if(HAL_OK != HAL_UART_Receive_IT(huart, uart2_buffer, 1)){
         global_error = 1;
     }
 }
-
 
 /* USER CODE END 0 */
 
@@ -188,7 +187,7 @@ int main(void)
 	print_init(__print_service);
 
 	/* Create and initialize ring buffer */
-	ring_buffer_init(&ring_buffer);
+	ring_buffer_init(&uart_rx_ring_buffer);
 
   /* USER CODE END 1 */
 
@@ -222,27 +221,32 @@ int main(void)
 
 	GPIO_InitStruct.Pin = LED3_PIN;
 	HAL_GPIO_Init(LED3_GPIO_PORT, &GPIO_InitStruct);
-
+	BSP_LED_Off(LED3);
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
 
     flush_buffer();
-	HAL_UART_Transmit(&huart2, (uint8_t*)"Hello Start\r\n", 15, 1000);
+//	HAL_UART_Transmit(&huart2, (uint8_t*)"Hello Start\r\n", 15, 1000);
     HAL_UART_Receive_IT(&huart2, uart2_buffer, 2);
 	while (1) {
 	    char ch;
-        if(0 < ring_buffer_dequeue(&ring_buffer, &ch)) {
+        if(0 < ring_buffer_dequeue(&uart_rx_ring_buffer, &ch)) {
             push(ch);
             char* line = get_line();
 
             if(line){
+                BSP_LED_On(LED3);
+
                 slcan_decode_line(line);
                 HAL_UART_Transmit(&huart2, (uint8_t*)line, strlen(line), 10);
                 flush_buffer();
+                BSP_LED_Off(LED3);
             }
         }
+
+        slcan_can_rx_process();
 
 //		HAL_Delay(100);
 

@@ -52,7 +52,7 @@ class slcanBus(sl.slcanBus):
         self.open()
 
 
-bus = slcanBus(channel='/dev/tty.usbmodem12403',
+bus = slcanBus(channel='/dev/tty.usbmodem12303',
                   ttyBoudrate=115200, sleep_after_open=0)
 
 msg = can.Message(arbitration_id=0x11223344, data=[1, 2, 3, 4, 5, 6, 7, 8], is_extended_id=True)

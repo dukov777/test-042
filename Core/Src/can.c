@@ -22,13 +22,15 @@
 
 /* USER CODE BEGIN 0 */
 #include <stdbool.h>
+#include "can_driver.h"
+#include "ringbuffer.h"
 
 uint8_t ubKeyNumber = 0x0;
 
 CAN_TxHeaderTypeDef TxHeader;
-CAN_RxHeaderTypeDef RxHeader;
+CAN_RxHeaderTypeDef _rx_header;
 uint8_t TxData[8];
-uint8_t RxData[8];
+uint8_t _rx_data[8];
 uint32_t TxMailbox = 0;
 
 CAN_FilterTypeDef sFilterConfig;
@@ -91,7 +93,7 @@ void MX_CAN_Init(void)
 
     const uint32_t error_filter = CAN_IT_ERROR_WARNING | CAN_IT_ERROR_PASSIVE
             | CAN_IT_BUSOFF |
-            CAN_IT_LAST_ERROR_CODE | CAN_IT_ERROR;
+            CAN_IT_LAST_ERROR_CODE | CAN_IT_ERROR | CAN_IT_RX_FIFO0_FULL;
 
     if (HAL_CAN_ActivateNotification(&hcan, error_filter) != HAL_OK) {
 
@@ -100,12 +102,12 @@ void MX_CAN_Init(void)
     }
 
     /*##-5- Configure Transmission process #####################################*/
-    TxHeader.StdId = 0x321;
-    TxHeader.ExtId = 0x01;
-    TxHeader.RTR = CAN_RTR_DATA;
-    TxHeader.IDE = CAN_ID_STD;
-    TxHeader.DLC = 2;
-    TxHeader.TransmitGlobalTime = DISABLE;
+//    TxHeader.StdId = 0x321;
+//    TxHeader.ExtId = 0x01;
+//    TxHeader.RTR = CAN_RTR_DATA;
+//    TxHeader.IDE = CAN_ID_STD;
+//    TxHeader.DLC = 2;
+//    TxHeader.TransmitGlobalTime = DISABLE;
 
   /* USER CODE END CAN_Init 2 */
 
@@ -135,6 +137,9 @@ void HAL_CAN_MspInit(CAN_HandleTypeDef* canHandle)
     GPIO_InitStruct.Alternate = GPIO_AF4_CAN;
     HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
+    /* CAN interrupt Init */
+    HAL_NVIC_SetPriority(CEC_CAN_IRQn, 0, 0);
+    HAL_NVIC_EnableIRQ(CEC_CAN_IRQn);
   /* USER CODE BEGIN CAN_MspInit 1 */
 
   /* USER CODE END CAN_MspInit 1 */
@@ -158,6 +163,8 @@ void HAL_CAN_MspDeInit(CAN_HandleTypeDef* canHandle)
     */
     HAL_GPIO_DeInit(GPIOA, GPIO_PIN_11|GPIO_PIN_12);
 
+    /* CAN interrupt Deinit */
+    HAL_NVIC_DisableIRQ(CEC_CAN_IRQn);
   /* USER CODE BEGIN CAN_MspDeInit 1 */
 
   /* USER CODE END CAN_MspDeInit 1 */
@@ -165,6 +172,84 @@ void HAL_CAN_MspDeInit(CAN_HandleTypeDef* canHandle)
 }
 
 /* USER CODE BEGIN 1 */
+
+#define CAN_ERROR_MSG_MAPPING_LEN 23
+
+const struct {
+    uint32_t error_id;
+    const char* human_readable_msg;
+} can_error_msg_mapping[CAN_ERROR_MSG_MAPPING_LEN] = {
+{HAL_CAN_ERROR_NONE            , "No error                                            "},
+{HAL_CAN_ERROR_EWG             , "Protocol Error Warning                              "},
+{HAL_CAN_ERROR_EPV             , "Error Passive                                       "},
+{HAL_CAN_ERROR_BOF             , "Bus-off error                                       "},
+{HAL_CAN_ERROR_STF             , "Stuff error                                         "},
+{HAL_CAN_ERROR_FOR             , "Form error                                          "},
+{HAL_CAN_ERROR_ACK             , "Acknowledgment error                                "},
+{HAL_CAN_ERROR_BR              , "Bit recessive error                                 "},
+{HAL_CAN_ERROR_BD              , "Bit dominant error                                  "},
+{HAL_CAN_ERROR_CRC             , "CRC error                                           "},
+{HAL_CAN_ERROR_RX_FOV0         , "Rx FIFO0 overrun error                              "},
+{HAL_CAN_ERROR_RX_FOV1         , "Rx FIFO1 overrun error                              "},
+{HAL_CAN_ERROR_TX_ALST0        , "TxMailbox 0 transmit failure due to arbitration lost"},
+{HAL_CAN_ERROR_TX_TERR0        , "TxMailbox 0 transmit failure due to transmit error  "},
+{HAL_CAN_ERROR_TX_ALST1        , "TxMailbox 1 transmit failure due to arbitration lost"},
+{HAL_CAN_ERROR_TX_TERR1        , "TxMailbox 1 transmit failure due to transmit error  "},
+{HAL_CAN_ERROR_TX_ALST2        , "TxMailbox 2 transmit failure due to arbitration lost"},
+{HAL_CAN_ERROR_TX_TERR2        , "TxMailbox 2 transmit failure due to transmit error  "},
+{HAL_CAN_ERROR_TIMEOUT         , "Timeout error                                       "},
+{HAL_CAN_ERROR_NOT_INITIALIZED , "Peripheral not initialized                          "},
+{HAL_CAN_ERROR_NOT_READY       , "Peripheral not ready                                "},
+{HAL_CAN_ERROR_NOT_STARTED     , "Peripheral not started                              "},
+{HAL_CAN_ERROR_PARAM           ,"Parameter error                                      "}
+};
+
+uint32_t __CANProcessErrors(CAN_HandleTypeDef *hcan) {
+    uint32_t error = HAL_CAN_GetError(hcan);
+    if (error != HAL_CAN_ERROR_NONE) {
+        for (int i = 0; i < CAN_ERROR_MSG_MAPPING_LEN; i++) {
+            if (error & can_error_msg_mapping[i].error_id) {
+//                print("CAN Error is: ");
+//                println("%s", can_error_msg_mapping[i].human_readable_msg);
+            }
+        }
+        HAL_CAN_ResetError(hcan);
+    }
+    return error;
+}
+
+
+ring_buffer_t can_rx_ring_buffer;
+#define RX_FIFO  0
+struct can_frame_s new;
+
+void HAL_CAN_RxFifo0FullCallback(CAN_HandleTypeDef *hcan)
+{
+    uint32_t error = __CANProcessErrors(hcan);
+    if(error == HAL_CAN_ERROR_NONE) {
+        uint32_t filllevel = HAL_CAN_GetRxFifoFillLevel(hcan, RX_FIFO);
+        while(filllevel--){
+            HAL_CAN_GetRxMessage(hcan, RX_FIFO, &_rx_header, new.data);
+            if(_rx_header.IDE == CAN_ID_STD){
+                new.id = _rx_header.StdId;
+                new.extended = 0;
+            }else{
+                new.id = _rx_header.ExtId;
+                new.extended = 1;
+            }
+            new.length = _rx_header.DLC;
+            new.remote = _rx_header.RTR;
+            new.timestamp = _rx_header.Timestamp;
+
+            // fill ring buffer only if it has free space. Otherwise miss the CAN frame.
+            size_t free = ring_buffer_free_bytes(&can_rx_ring_buffer);
+            if(free >= sizeof(struct can_frame_s)){
+                ring_buffer_queue_arr(&can_rx_ring_buffer, (char*)&new, sizeof(new));
+            }
+        }
+    }
+}
+
 
 bool can_send(uint32_t id, bool extended, bool remote, uint8_t* data, size_t length)
 {
@@ -279,19 +364,67 @@ bool can_set_bitrate(uint32_t bitrate)
 
 bool can_open(int mode)
 {
-    if (HAL_CAN_Init(&hcan) == HAL_OK){
-        hcan.Init.Mode = mode;
+    /* Create and initialize ring buffer */
+    ring_buffer_init(&can_rx_ring_buffer);
 
-    }else{
-      return false;
+    hcan.Init.Mode = mode;
+    if (HAL_CAN_Init(&hcan) != HAL_OK){
+        return false;
     }
 
-    return (HAL_CAN_Start(&hcan) == HAL_OK);
+    sFilterConfig.FilterBank = 0;
+    sFilterConfig.FilterMode = CAN_FILTERMODE_IDMASK;
+    sFilterConfig.FilterScale = CAN_FILTERSCALE_32BIT;
+    sFilterConfig.FilterIdHigh = 0x0000;
+    sFilterConfig.FilterIdLow = 0x0000;
+    sFilterConfig.FilterMaskIdHigh = 0x0000;
+    sFilterConfig.FilterMaskIdLow = 0x0000;
+    sFilterConfig.FilterFIFOAssignment = CAN_RX_FIFO0;
+    sFilterConfig.FilterActivation = ENABLE;
+    sFilterConfig.SlaveStartFilterBank = 14; // how many filters to assign to the CAN1 (master can)
+
+    if (HAL_CAN_ConfigFilter(&hcan, &sFilterConfig) != HAL_OK) {
+        return false;
+    }
+
+    if (HAL_CAN_Start(&hcan) != HAL_OK) {
+        return false;
+    }
+
+    const uint32_t error_filter = CAN_IT_ERROR_WARNING | CAN_IT_ERROR_PASSIVE
+            | CAN_IT_BUSOFF |
+            CAN_IT_LAST_ERROR_CODE | CAN_IT_ERROR | CAN_IT_RX_FIFO0_FULL;
+
+    if (HAL_CAN_ActivateNotification(&hcan, error_filter) != HAL_OK) {
+        return false;
+    }
+
+    return true;
+}
+
+
+bool can_get_next_frame(struct can_frame_s* can_frame){
+
+    size_t elements = 0;
+    //critical section begin
+    {
+        HAL_NVIC_DisableIRQ(CEC_CAN_IRQn);
+        elements = ring_buffer_num_items(&can_rx_ring_buffer);
+        HAL_NVIC_EnableIRQ(CEC_CAN_IRQn);
+    }//clritical section end
+
+    if(elements > sizeof(struct can_frame_s)){
+        ring_buffer_dequeue_arr(&can_rx_ring_buffer, (char*)can_frame, sizeof(struct can_frame_s));
+        return true;
+    }
+
+    return false;
 }
 
 void can_close(void)
 {
     HAL_CAN_Stop(&hcan);
+    HAL_CAN_DeInit(&hcan);
 }
 
 void can_init(void)
