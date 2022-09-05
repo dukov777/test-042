@@ -18,12 +18,16 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
+#include "can.h"
+#include "usart.h"
+#include "gpio.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include <string.h>
 #include "print.h"
 #include "slcan.h"
+#include "ringbuffer.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -41,22 +45,10 @@
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
-CAN_HandleTypeDef hcan;
-
-UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
 static GPIO_InitTypeDef GPIO_InitStruct;
 
-uint8_t ubKeyNumber = 0x0;
-
-CAN_TxHeaderTypeDef TxHeader;
-CAN_RxHeaderTypeDef RxHeader;
-uint8_t TxData[8];
-uint8_t RxData[8];
-uint32_t TxMailbox = 0;
-
-CAN_FilterTypeDef sFilterConfig;
 
 #define PRINT_BUFFER_SIZE 256
 char printBuffer[PRINT_BUFFER_SIZE];
@@ -64,9 +56,6 @@ char printBuffer[PRINT_BUFFER_SIZE];
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
-static void MX_GPIO_Init(void);
-static void MX_USART2_UART_Init(void);
-static void MX_CAN_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -133,7 +122,36 @@ void flush_buffer(){
     memset(__in_buffer, 0, MAX_BUFFER_LEN);
 }
 
+//char* slcan_getline(void* arg)
+//{
+//    static char line_buffer[500];
+//    static size_t pos = 0;
+//    size_t i;
+//    for (i = pos; i < sizeof(line_buffer); i++) {
+//        int c = chnGetTimeout((BaseChannel*)arg, TIME_INFINITE);
+//        if (c == STM_TIMEOUT) {
+//            /* no more data, continue */
+//            pos = i;
+//            return NULL;
+//        }
+//        if (c == '\n' || c == '\r' || c == '\0') {
+//            /* line found */
+//            line_buffer[i] = 0;
+//            pos = 0;
+//            led_set(STATUS_LED); // show USB activity
+//            return line_buffer;
+//        } else {
+//            line_buffer[i] = c;
+//        }
+//    }
+//
+//    /* reset */
+//    pos = 0;
+//    return NULL;
+//}
+
 char* get_line() {
+
     char* where = strchr(__in_buffer, '\r');
     if(where != NULL){
         return __in_buffer;
@@ -142,6 +160,20 @@ char* get_line() {
     }
 }
 
+
+ring_buffer_t uart_rx_ring_buffer;
+
+
+uint8_t uart2_buffer[8];
+volatile int global_error;
+
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
+{
+    ring_buffer_queue(&uart_rx_ring_buffer, uart2_buffer[0]);
+    if(HAL_OK != HAL_UART_Receive_IT(huart, uart2_buffer, 1)){
+        global_error = 1;
+    }
+}
 
 /* USER CODE END 0 */
 
@@ -153,6 +185,9 @@ int main(void)
 {
   /* USER CODE BEGIN 1 */
 	print_init(__print_service);
+
+	/* Create and initialize ring buffer */
+	ring_buffer_init(&uart_rx_ring_buffer);
 
   /* USER CODE END 1 */
 
@@ -186,29 +221,32 @@ int main(void)
 
 	GPIO_InitStruct.Pin = LED3_PIN;
 	HAL_GPIO_Init(LED3_GPIO_PORT, &GPIO_InitStruct);
-
+	BSP_LED_Off(LED3);
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
 
     flush_buffer();
-	HAL_UART_Transmit(&huart2, (uint8_t*)"Hello Start\r\n", 15, 1000);
-	while (1) {
-	    //read line
-	    char ch;
-		HAL_StatusTypeDef state = HAL_UART_Receive(&huart2, (uint8_t*)&ch, 1, 1);
-		if(state == HAL_OK){
-		    push(ch);
 
-		    char* line = get_line();
-		    if(line){
-//		        HAL_UART_Transmit(&huart2, (uint8_t*)line, strlen(line), 10);
-		        slcan_decode_line(line);
+    HAL_UART_Receive_IT(&huart2, uart2_buffer, 2);
+	while (1) {
+	    char ch;
+        if(0 < ring_buffer_dequeue(&uart_rx_ring_buffer, &ch)) {
+            push(ch);
+            char* line = get_line();
+
+            if(line){
+                BSP_LED_On(LED3);
+
+                slcan_decode_line(line);
                 HAL_UART_Transmit(&huart2, (uint8_t*)line, strlen(line), 10);
-		        flush_buffer();
-		    }
-		}
+                flush_buffer();
+                BSP_LED_Off(LED3);
+            }
+        }
+
+        slcan_can_rx_process();
 
 //		HAL_Delay(100);
 
@@ -243,9 +281,8 @@ void SystemClock_Config(void)
   /** Initializes the RCC Oscillators according to the specified parameters
   * in the RCC_OscInitTypeDef structure.
   */
-  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI;
-  RCC_OscInitStruct.HSIState = RCC_HSI_ON;
-  RCC_OscInitStruct.HSICalibrationValue = RCC_HSICALIBRATION_DEFAULT;
+  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI48;
+  RCC_OscInitStruct.HSI48State = RCC_HSI48_ON;
   RCC_OscInitStruct.PLL.PLLState = RCC_PLL_NONE;
   if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
   {
@@ -256,140 +293,14 @@ void SystemClock_Config(void)
   */
   RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK|RCC_CLOCKTYPE_SYSCLK
                               |RCC_CLOCKTYPE_PCLK1;
-  RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_HSI;
+  RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_HSI48;
   RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
   RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV1;
 
-  if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_0) != HAL_OK)
+  if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_1) != HAL_OK)
   {
     Error_Handler();
   }
-}
-
-/**
-  * @brief CAN Initialization Function
-  * @param None
-  * @retval None
-  */
-static void MX_CAN_Init(void)
-{
-
-  /* USER CODE BEGIN CAN_Init 0 */
-
-  /* USER CODE END CAN_Init 0 */
-
-  /* USER CODE BEGIN CAN_Init 1 */
-
-  /* USER CODE END CAN_Init 1 */
-  hcan.Instance = CAN;
-  hcan.Init.Prescaler = 16;
-  hcan.Init.Mode = CAN_MODE_NORMAL;
-  hcan.Init.SyncJumpWidth = CAN_SJW_1TQ;
-  hcan.Init.TimeSeg1 = CAN_BS1_2TQ;
-  hcan.Init.TimeSeg2 = CAN_BS2_1TQ;
-  hcan.Init.TimeTriggeredMode = DISABLE;
-  hcan.Init.AutoBusOff = DISABLE;
-  hcan.Init.AutoWakeUp = DISABLE;
-  hcan.Init.AutoRetransmission = DISABLE;
-  hcan.Init.ReceiveFifoLocked = DISABLE;
-  hcan.Init.TransmitFifoPriority = DISABLE;
-  if (HAL_CAN_Init(&hcan) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  /* USER CODE BEGIN CAN_Init 2 */
-	/*##-2- Configure the CAN Filter ###########################################*/
-	sFilterConfig.FilterBank = 0;
-	sFilterConfig.FilterMode = CAN_FILTERMODE_IDMASK;
-	sFilterConfig.FilterScale = CAN_FILTERSCALE_32BIT;
-	sFilterConfig.FilterIdHigh = 0x0000;
-	sFilterConfig.FilterIdLow = 0x0000;
-	sFilterConfig.FilterMaskIdHigh = 0x0000;
-	sFilterConfig.FilterMaskIdLow = 0x0000;
-	sFilterConfig.FilterFIFOAssignment = CAN_RX_FIFO0;
-	sFilterConfig.FilterActivation = ENABLE;
-	sFilterConfig.SlaveStartFilterBank = 14; // how many filters to assign to the CAN1 (master can)
-
-	if (HAL_CAN_ConfigFilter(&hcan, &sFilterConfig) != HAL_OK) {
-		/* Filter configuration Error */
-		Error_Handler();
-	}
-
-	/*##-3- Start the CAN peripheral ###########################################*/
-	if (HAL_CAN_Start(&hcan) != HAL_OK) {
-		/* Start Error */
-		Error_Handler();
-	}
-
-	const uint32_t error_filter = CAN_IT_ERROR_WARNING | CAN_IT_ERROR_PASSIVE
-			| CAN_IT_BUSOFF |
-			CAN_IT_LAST_ERROR_CODE | CAN_IT_ERROR;
-
-	if (HAL_CAN_ActivateNotification(&hcan, error_filter) != HAL_OK) {
-
-		/* Notification Error */
-		Error_Handler();
-	}
-
-	/*##-5- Configure Transmission process #####################################*/
-	TxHeader.StdId = 0x321;
-	TxHeader.ExtId = 0x01;
-	TxHeader.RTR = CAN_RTR_DATA;
-	TxHeader.IDE = CAN_ID_STD;
-	TxHeader.DLC = 2;
-	TxHeader.TransmitGlobalTime = DISABLE;
-
-  /* USER CODE END CAN_Init 2 */
-
-}
-
-/**
-  * @brief USART2 Initialization Function
-  * @param None
-  * @retval None
-  */
-static void MX_USART2_UART_Init(void)
-{
-
-  /* USER CODE BEGIN USART2_Init 0 */
-
-  /* USER CODE END USART2_Init 0 */
-
-  /* USER CODE BEGIN USART2_Init 1 */
-
-  /* USER CODE END USART2_Init 1 */
-  huart2.Instance = USART2;
-  huart2.Init.BaudRate = 115200;
-  huart2.Init.WordLength = UART_WORDLENGTH_8B;
-  huart2.Init.StopBits = UART_STOPBITS_1;
-  huart2.Init.Parity = UART_PARITY_NONE;
-  huart2.Init.Mode = UART_MODE_TX_RX;
-  huart2.Init.HwFlowCtl = UART_HWCONTROL_NONE;
-  huart2.Init.OverSampling = UART_OVERSAMPLING_16;
-  huart2.Init.OneBitSampling = UART_ONE_BIT_SAMPLE_DISABLE;
-  huart2.AdvancedInit.AdvFeatureInit = UART_ADVFEATURE_NO_INIT;
-  if (HAL_UART_Init(&huart2) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  /* USER CODE BEGIN USART2_Init 2 */
-
-  /* USER CODE END USART2_Init 2 */
-
-}
-
-/**
-  * @brief GPIO Initialization Function
-  * @param None
-  * @retval None
-  */
-static void MX_GPIO_Init(void)
-{
-
-  /* GPIO Ports Clock Enable */
-  __HAL_RCC_GPIOF_CLK_ENABLE();
-  __HAL_RCC_GPIOA_CLK_ENABLE();
-
 }
 
 /* USER CODE BEGIN 4 */

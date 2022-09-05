@@ -1,3 +1,6 @@
 [submodule "slcan"]
 	path = slcan
 	url = git@github.com:dukov777/slcan.git
+[submodule "ring-buffer"]
+	path = ring-buffer
+	url = git@github.com:AndersKaloer/Ring-Buffer.git
