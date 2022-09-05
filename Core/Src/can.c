@@ -245,7 +245,7 @@ void HAL_CAN_RxFifo0FullCallback(CAN_HandleTypeDef *hcan)
             new.timestamp = _rx_header.Timestamp;
 
             // fill ring buffer only if it has free space. Otherwise miss the CAN frame.
-            size_t free = ring_buffer_free_bytes(&can_rx_ring_buffer);
+            size_t free = RING_BUFFER_SIZE - ring_buffer_num_items(&can_rx_ring_buffer);
             if(free >= sizeof(struct can_frame_s)){
                 ring_buffer_queue_arr(&can_rx_ring_buffer, (char*)&new, sizeof(new));
             }
