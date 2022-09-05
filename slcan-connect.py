@@ -9,6 +9,15 @@ from can.exceptions import (
 )
 from can import typechecking
 
+import argparse
+
+parser = argparse.ArgumentParser(description='Send Std and Ext via SLCAN')
+parser.add_argument('tty', type=str,
+                    help='/dev/tty.usbmodem12303')
+parser.add_argument('--boudrate', type=int, default=115200, help='1000000')
+
+args = parser.parse_args()
+
 
 # class slcanBus(sl.slcanBus):
 #     pass
@@ -52,8 +61,8 @@ class slcanBus(sl.slcanBus):
         self.open()
 
 
-bus = slcanBus(channel='/dev/tty.usbmodem12303',
-                  ttyBoudrate=115200, sleep_after_open=0)
+bus = slcanBus(channel=args.tty,
+               ttyBoudrate=args.boudrate, sleep_after_open=0)
 
 msg = can.Message(arbitration_id=0x11223344, data=[1, 2, 3, 4, 5, 6, 7, 8], is_extended_id=True)
 try:

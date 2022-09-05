@@ -52,7 +52,7 @@ void MX_CAN_Init(void)
 
   /* USER CODE END CAN_Init 1 */
   hcan.Instance = CAN;
-  hcan.Init.Prescaler = 48;
+  hcan.Init.Prescaler = 96;
   hcan.Init.Mode = CAN_MODE_NORMAL;
   hcan.Init.SyncJumpWidth = CAN_SJW_1TQ;
   hcan.Init.TimeSeg1 = CAN_BS1_2TQ;
@@ -91,9 +91,12 @@ void MX_CAN_Init(void)
         Error_Handler();
     }
 
-    const uint32_t error_filter = CAN_IT_ERROR_WARNING | CAN_IT_ERROR_PASSIVE
-            | CAN_IT_BUSOFF |
-            CAN_IT_LAST_ERROR_CODE | CAN_IT_ERROR | CAN_IT_RX_FIFO0_FULL;
+    const uint32_t error_filter = CAN_IT_ERROR_WARNING
+            | CAN_IT_ERROR_PASSIVE
+            | CAN_IT_BUSOFF
+            | CAN_IT_LAST_ERROR_CODE
+            | CAN_IT_ERROR
+            | CAN_IT_RX_FIFO0_FULL;
 
     if (HAL_CAN_ActivateNotification(&hcan, error_filter) != HAL_OK) {
 
@@ -250,6 +253,9 @@ void HAL_CAN_RxFifo0FullCallback(CAN_HandleTypeDef *hcan)
     }
 }
 
+void HAL_CAN_ErrorCallback(CAN_HandleTypeDef *hcan){
+
+}
 
 bool can_send(uint32_t id, bool extended, bool remote, uint8_t* data, size_t length)
 {
@@ -316,16 +322,17 @@ bool can_send(uint32_t id, bool extended, bool remote, uint8_t* data, size_t len
 struct {
     uint32_t bitrate;
     uint32_t prescaler;
-} const can_bitrate_map[9] = {
-        {.bitrate=10000, .prescaler=600},
-        {.bitrate=20000, .prescaler=300},
+} const can_bitrate_map[10] = {
+        {.bitrate=10000, .prescaler=800},
+        {.bitrate=20000, .prescaler=400},
         {.bitrate=25000, .prescaler=240},
         {.bitrate=50000, .prescaler=120},
-        {.bitrate=100000, .prescaler=60},
-        {.bitrate=125000, .prescaler=48},
-        {.bitrate=250000, .prescaler=24},
-        {.bitrate=500000, .prescaler=12},
-        {.bitrate=1000000, .prescaler=6},
+        {.bitrate=100000, .prescaler=80},
+        {.bitrate=125000, .prescaler=64},
+        {.bitrate=250000, .prescaler=32},
+        {.bitrate=500000, .prescaler=16},
+        {.bitrate=800000, .prescaler=10},
+        {.bitrate=1000000, .prescaler=8}
 
 };
 #else
@@ -347,7 +354,7 @@ bool can_set_bitrate(uint32_t bitrate)
     }
 
     if(is_in_list){
-        for(int i = 0; i < 9; i++){
+        for(int i = 0; i < 10; i++){
             if(can_bitrate_map[i].bitrate == bitrate){
                 hcan.Init.Prescaler = can_bitrate_map[i].prescaler;
                 break;
