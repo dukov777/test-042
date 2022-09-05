@@ -96,7 +96,7 @@ void MX_CAN_Init(void)
             | CAN_IT_BUSOFF
             | CAN_IT_LAST_ERROR_CODE
             | CAN_IT_ERROR
-            | CAN_IT_RX_FIFO0_FULL;
+            | CAN_IT_RX_FIFO0_MSG_PENDING;
 
     if (HAL_CAN_ActivateNotification(&hcan, error_filter) != HAL_OK) {
 
@@ -226,7 +226,7 @@ ring_buffer_t can_rx_ring_buffer;
 #define RX_FIFO  0
 struct can_frame_s new;
 
-void HAL_CAN_RxFifo0FullCallback(CAN_HandleTypeDef *hcan)
+void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *hcan)
 {
     uint32_t error = __CANProcessErrors(hcan);
     if(error == HAL_CAN_ERROR_NONE) {
@@ -400,7 +400,7 @@ bool can_open(int mode)
 
     const uint32_t error_filter = CAN_IT_ERROR_WARNING | CAN_IT_ERROR_PASSIVE
             | CAN_IT_BUSOFF |
-            CAN_IT_LAST_ERROR_CODE | CAN_IT_ERROR | CAN_IT_RX_FIFO0_FULL;
+            CAN_IT_LAST_ERROR_CODE | CAN_IT_ERROR | CAN_IT_RX_FIFO0_MSG_PENDING;
 
     if (HAL_CAN_ActivateNotification(&hcan, error_filter) != HAL_OK) {
         return false;
