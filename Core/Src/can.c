@@ -24,7 +24,7 @@
 #include <stdbool.h>
 #include "can_driver.h"
 #include "ringbuffer.h"
-
+#include "print.h"
 uint8_t ubKeyNumber = 0x0;
 
 CAN_TxHeaderTypeDef TxHeader;
@@ -58,10 +58,10 @@ void MX_CAN_Init(void)
   hcan.Init.TimeSeg1 = CAN_BS1_2TQ;
   hcan.Init.TimeSeg2 = CAN_BS2_1TQ;
   hcan.Init.TimeTriggeredMode = DISABLE;
-  hcan.Init.AutoBusOff = DISABLE;
-  hcan.Init.AutoWakeUp = DISABLE;
-  hcan.Init.AutoRetransmission = DISABLE;
-  hcan.Init.ReceiveFifoLocked = DISABLE;
+  hcan.Init.AutoBusOff = ENABLE;
+  hcan.Init.AutoWakeUp = ENABLE;
+  hcan.Init.AutoRetransmission = ENABLE;
+  hcan.Init.ReceiveFifoLocked = ENABLE;
   hcan.Init.TransmitFifoPriority = DISABLE;
   if (HAL_CAN_Init(&hcan) != HAL_OK)
   {
@@ -207,16 +207,14 @@ const struct {
 {HAL_CAN_ERROR_PARAM           ,"Parameter error                                      "}
 };
 
-uint32_t __CANProcessErrors(CAN_HandleTypeDef *hcan) {
-    uint32_t error = HAL_CAN_GetError(hcan);
+uint32_t __CANProcessErrors(uint32_t error) {
     if (error != HAL_CAN_ERROR_NONE) {
         for (int i = 0; i < CAN_ERROR_MSG_MAPPING_LEN; i++) {
             if (error & can_error_msg_mapping[i].error_id) {
-//                print("CAN Error is: ");
-//                println("%s", can_error_msg_mapping[i].human_readable_msg);
+                print("CAN Error is: ");
+                println("%s", can_error_msg_mapping[i].human_readable_msg);
             }
         }
-        HAL_CAN_ResetError(hcan);
     }
     return error;
 }
@@ -228,7 +226,7 @@ struct can_frame_s new;
 
 void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *hcan)
 {
-    uint32_t error = __CANProcessErrors(hcan);
+    uint32_t error = HAL_CAN_GetError(hcan);
     if(error == HAL_CAN_ERROR_NONE) {
         uint32_t filllevel = HAL_CAN_GetRxFifoFillLevel(hcan, RX_FIFO);
         while(filllevel--){
@@ -253,9 +251,52 @@ void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *hcan)
     }
 }
 
-void HAL_CAN_ErrorCallback(CAN_HandleTypeDef *hcan){
+uint32_t _can_error = 0;
 
+// ISR - do not do much here
+void HAL_CAN_ErrorCallback(CAN_HandleTypeDef *hcan){
+    _can_error = HAL_CAN_GetError(hcan);
 }
+
+
+HAL_StatusTypeDef can_restart_controller(){
+    HAL_StatusTypeDef hal_status = HAL_OK;
+
+    hal_status = HAL_CAN_Stop(&hcan);
+    if (hal_status != HAL_OK) {
+        return hal_status;
+    }
+
+    hal_status = HAL_CAN_Init(&hcan);
+    if (hal_status != HAL_OK) {
+        return hal_status;
+    }
+
+    return HAL_OK;
+}
+
+
+HAL_StatusTypeDef can_state_checker(){
+    HAL_StatusTypeDef hal_status = HAL_OK;
+
+    if(_can_error) {
+        __CANProcessErrors(_can_error);
+
+        //reset variable to OK state
+        _can_error = HAL_CAN_ERROR_NONE;
+
+        //try to reset CAN controller and return the CAN to operational state
+        hal_status = can_restart_controller();
+        if (hal_status != HAL_OK) {
+            return hal_status;
+        }
+
+        //CAN Controller is fresh and sound if we are reaching this point!
+    }
+
+    return HAL_OK;
+}
+
 
 bool can_send(uint32_t id, bool extended, bool remote, uint8_t* data, size_t length)
 {

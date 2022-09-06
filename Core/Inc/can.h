@@ -41,6 +41,7 @@ extern CAN_HandleTypeDef hcan;
 void MX_CAN_Init(void);
 
 /* USER CODE BEGIN Prototypes */
+HAL_StatusTypeDef can_state_checker();
 
 /* USER CODE END Prototypes */
 

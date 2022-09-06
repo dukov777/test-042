@@ -68,23 +68,25 @@ char __buffer[PRINT_BUFFER_LEN];
 
 int __print_service(const char *str) {
 
+    HAL_UART_Transmit(&huart1, (uint8_t*) str, strlen(str), 100);
+
     int error = 0;
 
-    uint32_t __buffer_len = strlen(__print_buffer) + strlen(str);
-    if(__buffer_len < PRINT_BUFFER_LEN){
-        strncat(__print_buffer, str, PRINT_BUFFER_LEN - __buffer_len);
-    }else{
-        error = -1;
-    }
-
-    HAL_UART_StateTypeDef state = HAL_UART_GetState(&huart2);
-    if(state & HAL_UART_STATE_READY){
-        strncpy(__buffer, __print_buffer, PRINT_BUFFER_LEN);
-        HAL_UART_Transmit_DMA(&huart2, (uint8_t*) __buffer, strlen(__buffer));
-        __print_buffer[0] = '\0';
-
-        error = 0;
-    }
+//    uint32_t __buffer_len = strlen(__print_buffer) + strlen(str);
+//    if(__buffer_len < PRINT_BUFFER_LEN){
+//        strncat(__print_buffer, str, PRINT_BUFFER_LEN - __buffer_len);
+//    }else{
+//        error = -1;
+//    }
+//
+//    HAL_UART_StateTypeDef state = HAL_UART_GetState(&huart1);
+//    if(state & HAL_UART_STATE_READY){
+//        strncpy(__buffer, __print_buffer, PRINT_BUFFER_LEN);
+//        HAL_UART_Transmit_DMA(&huart1, (uint8_t*) __buffer, strlen(__buffer));
+//        __print_buffer[0] = '\0';
+//
+//        error = 0;
+//    }
 
     return error;
 }
@@ -211,6 +213,7 @@ int main(void)
   MX_GPIO_Init();
   MX_USART2_UART_Init();
   MX_CAN_Init();
+  MX_USART1_UART_Init();
   /* USER CODE BEGIN 2 */
 	LED3_GPIO_CLK_ENABLE();
 
@@ -228,6 +231,8 @@ int main(void)
   /* USER CODE BEGIN WHILE */
 
     flush_buffer();
+
+    println("Starting");
 
     HAL_UART_Receive_IT(&huart2, uart2_buffer, 2);
 	while (1) {
@@ -247,6 +252,10 @@ int main(void)
         }
 
         slcan_can_rx_process();
+
+        if(can_state_checker() != HAL_OK){
+            Error_Handler();
+        }
 
 //		HAL_Delay(100);
 
@@ -277,6 +286,7 @@ void SystemClock_Config(void)
 {
   RCC_OscInitTypeDef RCC_OscInitStruct = {0};
   RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
+  RCC_PeriphCLKInitTypeDef PeriphClkInit = {0};
 
   /** Initializes the RCC Oscillators according to the specified parameters
   * in the RCC_OscInitTypeDef structure.
@@ -298,6 +308,12 @@ void SystemClock_Config(void)
   RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV1;
 
   if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  PeriphClkInit.PeriphClockSelection = RCC_PERIPHCLK_USART1;
+  PeriphClkInit.Usart1ClockSelection = RCC_USART1CLKSOURCE_PCLK1;
+  if (HAL_RCCEx_PeriphCLKConfig(&PeriphClkInit) != HAL_OK)
   {
     Error_Handler();
   }

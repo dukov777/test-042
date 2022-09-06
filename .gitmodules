@@ -4,3 +4,6 @@
 [submodule "ring-buffer"]
 	path = ring-buffer
 	url = git@github.com:AndersKaloer/Ring-Buffer.git
+[submodule "fifo"]
+	path = fifo
+	url = git@github.com:geekfactory/FIFO.git
