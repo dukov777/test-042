@@ -1,3 +1,5 @@
+from typing import Any, Optional, Tuple
+
 import time
 import can
 import can.interfaces.slcan as sl
@@ -60,6 +62,10 @@ class slcanBus(sl.slcanBus):
         self._write("s" + btr)
         buffer = self._read(0.1)
         self.open()
+
+    def send(self, msg, timeout: Optional[float] = None) -> None:
+        super().send(msg, timeout)
+        self._read(0.1)
 
 
 bus = slcanBus(channel=args.tty,
