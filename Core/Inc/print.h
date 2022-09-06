@@ -12,6 +12,7 @@ void print_init(int (*print_service)(const char *str));
 
 int println(const char *format, ...);
 int print(const char *format, ...);
+const char* hal_error_2_str(HAL_StatusTypeDef error);
 
 
 #endif /* INC_PRINT_H_ */

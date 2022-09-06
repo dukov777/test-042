@@ -15,6 +15,7 @@ parser = argparse.ArgumentParser(description='Send Std and Ext via SLCAN')
 parser.add_argument('tty', type=str,
                     help='/dev/tty.usbmodem12303')
 parser.add_argument('--boudrate', type=int, default=115200, help='1000000')
+parser.add_argument('--loop', type=int, default=1, help='--loop -1 loops forever')
 
 args = parser.parse_args()
 
@@ -63,27 +64,31 @@ class slcanBus(sl.slcanBus):
 
 bus = slcanBus(channel=args.tty,
                ttyBoudrate=args.boudrate, sleep_after_open=0)
-
-msg = can.Message(arbitration_id=0x11223344, data=[1, 2, 3, 4, 5, 6, 7, 8], is_extended_id=True)
-try:
-    bus.send(msg)
-    print(f"Message sent on {bus.channel_info}")
-except can.CanError:
-    print("Message NOT sent")
-
-msg = can.Message(arbitration_id=0x001, data=[
-                  0xa1, 0xa2, 0xa3, 0xa4, 0xa5, 0xa6, 0xa7, 0xa8], is_extended_id=False)
-try:
-    bus.send(msg)
-    print(f"Message sent on {bus.channel_info}")
-except can.CanError:
-    print("Message NOT sent")
-
+ 
 time.sleep(0.1)
 version = bus.get_version(1)
+print("version is")
 print(version)
 
-time.sleep(0.1)
-bus.set_bitrate(125000)
+for i in range(args.loop):
+
+    can_data = round(time.time()*1000).to_bytes(8, 'big')
+
+    msg = can.Message(arbitration_id=0x11223344, data=can_data, is_extended_id=True)
+    try:
+        bus.send(msg)
+    except can.CanError:
+        print("Message NOT sent")
+
+
+    msg = can.Message(arbitration_id=0x001, data=can_data, is_extended_id=False)
+    try:
+        bus.send(msg)
+    except can.CanError:
+        print("Message NOT sent")
+
+
+    # time.sleep(0.1)
+    # bus.set_bitrate(125000)
 
 bus.shutdown()

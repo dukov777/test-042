@@ -35,6 +35,7 @@ uint32_t TxMailbox = 0;
 
 CAN_FilterTypeDef sFilterConfig;
 
+bool _can_open();
 
 /* USER CODE END 0 */
 
@@ -226,27 +227,24 @@ struct can_frame_s new;
 
 void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *hcan)
 {
-    uint32_t error = HAL_CAN_GetError(hcan);
-    if(error == HAL_CAN_ERROR_NONE) {
-        uint32_t filllevel = HAL_CAN_GetRxFifoFillLevel(hcan, RX_FIFO);
-        while(filllevel--){
-            HAL_CAN_GetRxMessage(hcan, RX_FIFO, &_rx_header, new.data);
-            if(_rx_header.IDE == CAN_ID_STD){
-                new.id = _rx_header.StdId;
-                new.extended = 0;
-            }else{
-                new.id = _rx_header.ExtId;
-                new.extended = 1;
-            }
-            new.length = _rx_header.DLC;
-            new.remote = _rx_header.RTR;
-            new.timestamp = _rx_header.Timestamp;
+    uint32_t filllevel = HAL_CAN_GetRxFifoFillLevel(hcan, RX_FIFO);
+    while(filllevel--){
+        HAL_CAN_GetRxMessage(hcan, RX_FIFO, &_rx_header, new.data);
+        if(_rx_header.IDE == CAN_ID_STD){
+            new.id = _rx_header.StdId;
+            new.extended = 0;
+        }else{
+            new.id = _rx_header.ExtId;
+            new.extended = 1;
+        }
+        new.length = _rx_header.DLC;
+        new.remote = _rx_header.RTR;
+        new.timestamp = _rx_header.Timestamp;
 
-            // fill ring buffer only if it has free space. Otherwise miss the CAN frame.
-            size_t free = RING_BUFFER_SIZE - ring_buffer_num_items(&can_rx_ring_buffer);
-            if(free >= sizeof(struct can_frame_s)){
-                ring_buffer_queue_arr(&can_rx_ring_buffer, (char*)&new, sizeof(new));
-            }
+        // fill ring buffer only if it has free space. Otherwise miss the CAN frame.
+        size_t free = RING_BUFFER_SIZE - ring_buffer_num_items(&can_rx_ring_buffer);
+        if(free >= sizeof(struct can_frame_s)){
+            ring_buffer_queue_arr(&can_rx_ring_buffer, (char*)&new, sizeof(new));
         }
     }
 }
@@ -261,17 +259,15 @@ void HAL_CAN_ErrorCallback(CAN_HandleTypeDef *hcan){
 
 HAL_StatusTypeDef can_restart_controller(){
     HAL_StatusTypeDef hal_status = HAL_OK;
-
-    hal_status = HAL_CAN_Stop(&hcan);
-    if (hal_status != HAL_OK) {
-        return hal_status;
-    }
+    println("begin %s:", __FUNCTION__);
 
     hal_status = HAL_CAN_Init(&hcan);
     if (hal_status != HAL_OK) {
+        println("ERROR %s: Failed to initialize CAN! error - %d", __FUNCTION__, hal_error_2_str(hal_status));
         return hal_status;
     }
 
+    println("--end %s", __FUNCTION__);
     return HAL_OK;
 }
 
@@ -289,6 +285,11 @@ HAL_StatusTypeDef can_state_checker(){
         hal_status = can_restart_controller();
         if (hal_status != HAL_OK) {
             return hal_status;
+        }
+
+        //open CAN
+        if (_can_open() == false) {
+            return HAL_ERROR;
         }
 
         //CAN Controller is fresh and sound if we are reaching this point!
@@ -410,16 +411,8 @@ bool can_set_bitrate(uint32_t bitrate)
     return is_in_list;
 }
 
-bool can_open(int mode)
+bool _can_open()
 {
-    /* Create and initialize ring buffer */
-    ring_buffer_init(&can_rx_ring_buffer);
-
-    hcan.Init.Mode = mode;
-    if (HAL_CAN_Init(&hcan) != HAL_OK){
-        return false;
-    }
-
     sFilterConfig.FilterBank = 0;
     sFilterConfig.FilterMode = CAN_FILTERMODE_IDMASK;
     sFilterConfig.FilterScale = CAN_FILTERSCALE_32BIT;
@@ -450,6 +443,29 @@ bool can_open(int mode)
     return true;
 }
 
+bool can_open(int mode)
+{
+    /* Create and initialize ring buffer */
+    ring_buffer_init(&can_rx_ring_buffer);
+
+    hcan.Init.Mode = mode;
+    if (HAL_CAN_Init(&hcan) != HAL_OK){
+        return false;
+    }
+
+    return _can_open();
+}
+
+
+void can_close(void)
+{
+    HAL_CAN_Stop(&hcan);
+    HAL_CAN_DeInit(&hcan);
+}
+
+void can_init(void)
+{
+}
 
 bool can_get_next_frame(struct can_frame_s* can_frame){
 
@@ -469,14 +485,5 @@ bool can_get_next_frame(struct can_frame_s* can_frame){
     return false;
 }
 
-void can_close(void)
-{
-    HAL_CAN_Stop(&hcan);
-    HAL_CAN_DeInit(&hcan);
-}
-
-void can_init(void)
-{
-}
 
 /* USER CODE END 1 */
