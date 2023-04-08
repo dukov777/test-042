@@ -420,7 +420,7 @@ bool can_get_next_frame(struct can_frame_s* can_frame){
         HAL_NVIC_EnableIRQ(CEC_CAN_IRQn);
     }//clritical section end
 
-    if(elements > sizeof(struct can_frame_s)){
+    if(elements >= sizeof(struct can_frame_s)){
         ring_buffer_dequeue_arr(&can_rx_ring_buffer, (char*)can_frame, sizeof(struct can_frame_s));
         return true;
     }
